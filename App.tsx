@@ -65,6 +65,62 @@ function fromISODate(iso: string): Date {
 }
 
 // ==========================================
+// CUSTOM FLOATING DATE PICKER COMPONENT
+// ==========================================
+function CustomDatePicker({ date, setDate, label }: { date: Date, setDate: (d: Date) => void, label: string }) {
+  const [show, setShow] = useState(false);
+  const isIOS = Platform.OS === 'ios';
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    if (!isIOS) setShow(false); // Auto-close on Android
+    if (event.type === 'set' && selectedDate) {
+      setDate(selectedDate);
+      if (isIOS) setShow(false); // Auto-close on iOS when a date is tapped
+    } else if (event.type === 'dismissed') {
+      setShow(false);
+    }
+  };
+
+  return (
+    <View>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity style={styles.input} onPress={() => setShow(true)}>
+        <Text style={{ fontSize: 16, color: '#1a1a1a' }}>{formatDate(toISODate(date))}</Text>
+      </TouchableOpacity>
+
+      {/* Android Native Dialog */}
+      {!isIOS && show && (
+        <DateTimePicker
+          value={date}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+        />
+      )}
+
+      {/* iOS Floating Modal Calendar */}
+      {isIOS && (
+        <Modal transparent visible={show} animationType="fade">
+          <Pressable style={styles.modalOverlay} onPress={() => setShow(false)}>
+            <View style={styles.floatingCalendar}>
+              <Text style={styles.calendarTitle}>Select Date</Text>
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="inline"
+                onChange={onDateChange}
+                style={{ width: 320, height: 320 }}
+                themeVariant="light" // <--- THIS FORCES DARK TEXT ON WHITE BACKGROUND
+              />
+            </View>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
+  );
+}
+
+// ==========================================
 // SCREEN 1: CASES
 // ==========================================
 function CasesScreen() {
@@ -79,7 +135,6 @@ function CasesScreen() {
   const [court, setCourt] = useState('District Court Rampur');
   const [hearingDate, setHearingDate] = useState<Date>(new Date());
   const [notes, setNotes] = useState('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function loadCases() {
@@ -108,7 +163,6 @@ function CasesScreen() {
     setCourt('District Court Rampur');
     setHearingDate(new Date());
     setNotes('');
-    setShowDatePicker(false);
     setModalVisible(true);
   }
 
@@ -119,7 +173,6 @@ function CasesScreen() {
     setCourt(c.court);
     setHearingDate(fromISODate(c.nextHearing));
     setNotes(c.notes ?? '');
-    setShowDatePicker(false);
     setModalVisible(true);
   }
 
@@ -200,7 +253,7 @@ function CasesScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const days = daysUntil(item.nextHearing);
-            const isUrgent = days >= 0 && days <= 1; // Don't make past dates "urgent"
+            const isUrgent = days >= 0 && days <= 1;
             const isPast = days < 0;
             return (
               <TouchableOpacity activeOpacity={0.7} onPress={() => openEditModal(item)}>
@@ -208,6 +261,7 @@ function CasesScreen() {
                   <View style={styles.cardHeader}>
                     <Text style={styles.caseTitle}>{item.title}</Text>
                     {isUrgent && <Text style={styles.urgentBadge}>URGENT</Text>}
+                    {isPast && <Text style={styles.overdueBadge}>OVERDUE</Text>}
                   </View>
                   <Text style={styles.caseNumber}>{item.caseNumber}</Text>
                   <Text style={styles.court}>{item.court}</Text>
@@ -215,7 +269,7 @@ function CasesScreen() {
                     <Text style={styles.dateLabel}>Next hearing:</Text>
                     <Text style={styles.dateValue}>{formatDate(item.nextHearing)}</Text>
                   </View>
-                  <Text style={[styles.daysUntil, isPast && { color: '#888' }]}>
+                  <Text style={[styles.daysUntil, isPast && { color: '#b71c1c' }]}>
                     {formatDaysText(days)}
                   </Text>
                   {item.notes ? <Text style={styles.notesIndicator}>📝 Has notes</Text> : null}
@@ -227,7 +281,6 @@ function CasesScreen() {
       )}
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
-        {/* Fix: Make StatusBar dark when modal is open to match white header */}
         <StatusBar barStyle="dark-content" />
         <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#fff' }} behavior={isIOS ? 'padding' : undefined}>
           <View style={styles.modalHeader}>
@@ -239,38 +292,19 @@ function CasesScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Case title</Text>
-            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="State vs. Ramesh Kumar" />
-            <Text style={styles.label}>Case number</Text>
-            <TextInput style={styles.input} value={caseNumber} onChangeText={setCaseNumber} placeholder="CRL/245/2025" autoCapitalize="characters" />
-            <Text style={styles.label}>Court</Text>
-            <TextInput style={styles.input} value={court} onChangeText={setCourt} placeholder="District Court Rampur" />
+            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="State vs. Ramesh Kumar" placeholderTextColor="#888" />
             
-            <Text style={styles.label}>Next hearing date</Text>
-            {/* Fix: Use compact display for iOS to save space */}
-            {isIOS ? (
-              <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-                <DateTimePicker
-                  value={hearingDate}
-                  mode="date"
-                  display="compact"
-                  onChange={(_, selected) => { if (selected) setHearingDate(selected); }}
-                />
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
-                <Text style={{ fontSize: 16, color: '#1a1a1a' }}>{formatDate(toISODate(hearingDate))}</Text>
-              </TouchableOpacity>
-            )}
-            {!isIOS && showDatePicker && (
-              <DateTimePicker value={hearingDate} mode="date" display="default"
-                onChange={(_, selected) => {
-                  setShowDatePicker(false);
-                  if (selected) setHearingDate(selected);
-                }} />
-            )}
+            <Text style={styles.label}>Case number</Text>
+            <TextInput style={styles.input} value={caseNumber} onChangeText={setCaseNumber} placeholder="CRL/245/2025" placeholderTextColor="#888" autoCapitalize="characters" />
+            
+            <Text style={styles.label}>Court</Text>
+            <TextInput style={styles.input} value={court} onChangeText={setCourt} placeholder="District Court Rampur" placeholderTextColor="#888" />
+            
+            <CustomDatePicker date={hearingDate} setDate={setHearingDate} label="Next hearing date" />
 
             <Text style={styles.label}>Notes</Text>
-            <TextInput style={[styles.input, styles.notesInput]} value={notes} onChangeText={setNotes} placeholder="Client to bring documents..." multiline textAlignVertical="top" />
+            <TextInput style={[styles.input, styles.notesInput]} value={notes} onChangeText={setNotes} placeholder="Client to bring documents..." placeholderTextColor="#888" multiline textAlignVertical="top" />
+            
             {editingCase && (
               <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
                 <Text style={styles.deleteButtonText}>Delete this case</Text>
@@ -294,8 +328,6 @@ function CalculatorScreen() {
   const [selectedType, setSelectedType] = useState(LIMITATION_TYPES[0]);
   const [deadline, setDeadline] = useState<Date | null>(null);
 
-  const isIOS = Platform.OS === 'ios';
-
   function handleCalculate() {
     setDeadline(calculateDeadline(judgmentDate, selectedType.days));
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
@@ -309,21 +341,8 @@ function CalculatorScreen() {
       </View>
       <ScrollView contentContainerStyle={styles.list} ref={scrollViewRef} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Text style={styles.label}>Judgment / Order Date</Text>
-          {isIOS ? (
-            <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-              <DateTimePicker
-                value={judgmentDate}
-                mode="date"
-                display="compact"
-                onChange={(_, selected) => { if (selected) setJudgmentDate(selected); }}
-              />
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
-              <Text style={{ fontSize: 16, color: '#1a1a1a' }}>{formatDisplayDate(judgmentDate)}</Text>
-            </TouchableOpacity>
-          )}
+          
+          <CustomDatePicker date={judgmentDate} setDate={setJudgmentDate} label="Judgment / Order Date" />
 
           <Text style={[styles.label, { marginTop: 24 }]}>Type of Proceeding</Text>
           <View style={styles.typeGrid}>
@@ -461,7 +480,7 @@ function LegalScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.title}>Legal Reference</Text>
         <View style={styles.searchContainer}>
-          <TextInput style={styles.searchInput} placeholder="Search laws (e.g. data)..." value={query} onChangeText={setQuery} />
+          <TextInput style={styles.searchInput} placeholder="Search laws (e.g. data)..." placeholderTextColor="#888" value={query} onChangeText={setQuery} />
         </View>
       </View>
       {loading ? (
@@ -541,11 +560,15 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: '#666', textAlign: 'center' },
   list: { padding: 16 },
   card: { backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  
   cardUrgent: { borderLeftWidth: 5, borderLeftColor: '#d9534f' },
-  cardPast: { opacity: 0.6 }, // Fade out past cases
+  cardPast: { borderLeftWidth: 5, borderLeftColor: '#b71c1c', backgroundColor: '#fffafa' },
+  
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
   caseTitle: { fontSize: 17, fontWeight: '600', color: '#1a1a1a', flex: 1, paddingRight: 8 },
   urgentBadge: { fontSize: 11, fontWeight: '700', color: '#ffffff', backgroundColor: '#d9534f', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  overdueBadge: { fontSize: 11, fontWeight: '700', color: '#ffffff', backgroundColor: '#b71c1c', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  
   caseNumber: { fontSize: 13, color: '#555', marginBottom: 2 },
   court: { fontSize: 13, color: '#777', marginBottom: 10 },
   dateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
@@ -561,8 +584,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', color: '#444', marginTop: 16, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: { borderWidth: 1, borderColor: '#d0d7de', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: '#1a1a1a', backgroundColor: '#fff', justifyContent: 'center' },
   notesInput: { minHeight: 100, paddingTop: 12 },
-  doneButton: { marginTop: 12, backgroundColor: '#1f3a5f', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
-  doneButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   deleteButton: { marginTop: 32, paddingVertical: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#d9534f', backgroundColor: '#fff' },
   deleteButtonText: { color: '#d9534f', fontWeight: '600', fontSize: 15 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
@@ -577,4 +598,7 @@ const styles = StyleSheet.create({
   resultDate: { fontSize: 24, fontWeight: '800', color: '#1f3a5f', marginBottom: 8 },
   resultHint: { fontSize: 12, color: '#666', fontStyle: 'italic' },
   disclaimer: { fontSize: 11, color: '#888', marginTop: 24, textAlign: 'center', lineHeight: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  floatingCalendar: { backgroundColor: '#fff', borderRadius: 16, padding: 16, width: '90%', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  calendarTitle: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', marginBottom: 16 },
 });
