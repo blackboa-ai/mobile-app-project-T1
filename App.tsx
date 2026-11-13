@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
@@ -16,7 +15,12 @@ import {
   KeyboardAvoidingView,
   Alert,
 } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
 import {
   initDatabase,
   getAllCases,
@@ -37,339 +41,39 @@ import { LIMITATION_TYPES, calculateDeadline, formatDisplayDate } from './src/li
 // --- Helpers ---
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
-
 function daysUntil(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const target = new Date(iso + 'T00:00:00');
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
-
+function formatDaysText(days: number): string {
+  if (days < 0) return 'Overdue';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return `In ${days} days`;
+}
 function toISODate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-
 function fromISODate(iso: string): Date {
   return new Date(iso + 'T00:00:00');
 }
 
-// --- Calculator Screen Component ---
-function CalculatorScreen({ onBack }: { onBack: () => void }) {
-  const [judgmentDate, setJudgmentDate] = useState<Date>(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedType, setSelectedType] = useState(LIMITATION_TYPES[0]);
-  const [deadline, setDeadline] = useState<Date | null>(null);
-
-  const isIOS = Platform.OS === 'ios';
-
-  function handleCalculate() {
-    const result = calculateDeadline(judgmentDate, selectedType.days);
-    setDeadline(result);
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onBack} style={{ padding: 8 }}>
-            <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={[styles.title, { fontSize: 20, marginLeft: 8 }]}>
-            Limitation Calculator
-          </Text>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.list}>
-        <View style={styles.card}>
-          <Text style={styles.label}>Judgment / Order Date</Text>
-          <TouchableOpacity
-            style={styles.input}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Text style={{ fontSize: 16, color: '#1a1a1a' }}>
-              {formatDisplayDate(judgmentDate)}
-            </Text>
-          </TouchableOpacity>
-
-          {showDatePicker && (
-            <DateTimePicker
-              value={judgmentDate}
-              mode="date"
-              display={isIOS ? 'inline' : 'default'}
-              onChange={(_, selected) => {
-                if (isIOS) {
-                  if (selected) setJudgmentDate(selected);
-                } else {
-                  setShowDatePicker(false);
-                  if (selected) setJudgmentDate(selected);
-                }
-              }}
-            />
-          )}
-
-          {isIOS && showDatePicker && (
-            <TouchableOpacity
-              style={styles.doneButton}
-              onPress={() => setShowDatePicker(false)}
-            >
-              <Text style={styles.doneButtonText}>Done picking date</Text>
-            </TouchableOpacity>
-          )}
-
-          <Text style={[styles.label, { marginTop: 24 }]}>Type of Proceeding</Text>
-          <View style={styles.typeGrid}>
-            {LIMITATION_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type.label}
-                style={[
-                  styles.typeButton,
-                  selectedType.label === type.label && styles.typeButtonActive,
-                ]}
-                onPress={() => {
-                  setSelectedType(type);
-                  setDeadline(null); // Reset result when type changes
-                }}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    selectedType.label === type.label && styles.typeButtonTextActive,
-                  ]}
-                >
-                  {type.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity style={styles.calcButton} onPress={handleCalculate}>
-            <Text style={styles.calcButtonText}>Calculate Deadline</Text>
-          </TouchableOpacity>
-
-          {deadline && (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultLabel}>Last Date to File</Text>
-              <Text style={styles.resultDate}>{formatDisplayDate(deadline)}</Text>
-              <Text style={styles.resultHint}>
-                Based on {selectedType.days} days from judgment.
-              </Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// --- Legal Reference Screen Component ---
-function LegalScreen({ onBack }: { onBack: () => void }) {
-  const [laws, setLaws] = useState<Law[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
-  const [selectedLaw, setSelectedLaw] = useState<Law | null>(null);
-  const [provisions, setProvisions] = useState<Provision[]>([]);
-  const [loadingProvisions, setLoadingProvisions] = useState(false);
-  const [selectedProvision, setSelectedProvision] = useState<Provision | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadAllLaws();
-  }, []);
-
-  async function loadAllLaws() {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchLaws();
-      setLaws(data);
-    } catch (e) {
-      setError('Could not load laws. Check your internet connection.');
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const filteredLaws = laws.filter((law) => {
-    if (!query.trim()) return true;
-    const searchTerm = query.toLowerCase();
-    return (
-      law.title.toLowerCase().includes(searchTerm) ||
-      law.category.toLowerCase().includes(searchTerm) ||
-      law.authority.toLowerCase().includes(searchTerm)
-    );
-  });
-
-  async function openLaw(law: Law) {
-    setSelectedLaw(law);
-    setLoadingProvisions(true);
-    setError(null);
-    try {
-      const data = await fetchLawProvisions(law.apiSlug);
-      setProvisions(data);
-    } catch (e) {
-      setError('Could not load provisions.');
-      console.error(e);
-    } finally {
-      setLoadingProvisions(false);
-    }
-  }
-
-  function goBackToList() {
-    setSelectedLaw(null);
-    setProvisions([]);
-    setSelectedProvision(null);
-  }
-
-  if (selectedProvision) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => setSelectedProvision(null)} style={{ padding: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 18 }}>← Close</Text>
-            </TouchableOpacity>
-            <Text style={[styles.title, { fontSize: 18, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
-              Section {selectedProvision.number}
-            </Text>
-          </View>
-        </View>
-        <ScrollView contentContainerStyle={styles.list}>
-          <View style={styles.card}>
-            <Text style={[styles.caseTitle, { fontSize: 20, marginBottom: 12 }]}>
-              {selectedProvision.title}
-            </Text>
-            <Text style={{ fontSize: 16, color: '#333', lineHeight: 24 }}>
-              {selectedProvision.text}
-            </Text>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  if (selectedLaw) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <TouchableOpacity onPress={goBackToList} style={{ padding: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={[styles.title, { fontSize: 18, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
-              {selectedLaw.title}
-            </Text>
-          </View>
-        </View>
-        {loadingProvisions ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#1f3a5f" />
-          </View>
-        ) : error ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>Error</Text>
-            <Text style={styles.emptyText}>{error}</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={provisions}
-            keyExtractor={(item, index) => item.number || String(index)}
-            contentContainerStyle={styles.list}
-            renderItem={({ item }) => (
-              <TouchableOpacity activeOpacity={0.7} onPress={() => setSelectedProvision(item)}>
-                <View style={styles.card}>
-                  <Text style={styles.caseTitle}>
-                    Section {item.number}: {item.title}
-                  </Text>
-                  <Text style={styles.caseNumber}>Tap to read full text</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-          />
-        )}
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onBack} style={{ padding: 8 }}>
-            <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={[styles.title, { fontSize: 20, marginLeft: 8 }]}>
-            Legal Reference
-          </Text>
-        </View>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search laws (e.g. data, gaming)..."
-            placeholderTextColor="#aaa"
-            value={query}
-            onChangeText={setQuery}
-            returnKeyType="search"
-          />
-        </View>
-      </View>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1f3a5f" />
-        </View>
-      ) : error ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>Error</Text>
-          <Text style={styles.emptyText}>{error}</Text>
-          <TouchableOpacity style={[styles.addButton, { marginTop: 16 }]} onPress={loadAllLaws}>
-            <Text style={styles.addButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredLaws}
-          keyExtractor={(item, index) => item.apiSlug || String(index)}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => openLaw(item)}>
-              <View style={styles.card}>
-                <Text style={styles.caseTitle}>{item.title}</Text>
-                <Text style={styles.court}>{item.category} • {item.authority}</Text>
-                <Text style={styles.caseNumber}>{item.sections} sections • {item.status}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-// --- Main App Component ---
-export default function App() {
+// ==========================================
+// SCREEN 1: CASES
+// ==========================================
+function CasesScreen() {
+  const insets = useSafeAreaInsets();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
-  const [currentScreen, setCurrentScreen] = useState<'cases' | 'legal' | 'calculator'>('cases');
 
-  // Case Form State
   const [title, setTitle] = useState('');
   const [caseNumber, setCaseNumber] = useState('');
   const [court, setCourt] = useState('District Court Rampur');
@@ -380,7 +84,6 @@ export default function App() {
 
   async function loadCases() {
     const rows = await getAllCases();
-    console.log(`Loaded ${rows.length} cases from SQLite`);
     setCases(rows);
     await rescheduleAll(rows);
   }
@@ -426,34 +129,21 @@ export default function App() {
   }
 
   async function handleSave() {
-    if (!title.trim()) {
-      Alert.alert('Missing case title', 'Please enter a case title.');
-      return;
-    }
-    if (!caseNumber.trim()) {
-      Alert.alert('Missing case number', 'Please enter a case number.');
+    if (!title.trim() || !caseNumber.trim()) {
+      Alert.alert('Missing fields', 'Please enter at least a title and case number.');
       return;
     }
     try {
       setSaving(true);
-      const payload = {
-        title: title.trim(),
-        caseNumber: caseNumber.trim(),
-        court: court.trim() || 'District Court Rampur',
-        nextHearing: toISODate(hearingDate),
-        notes: notes.trim(),
-      };
-      if (editingCase) {
-        await updateCase(editingCase.id, payload);
-      } else {
-        await addCase(payload);
-      }
+      const payload = { title: title.trim(), caseNumber: caseNumber.trim(), court: court.trim() || 'District Court Rampur', nextHearing: toISODate(hearingDate), notes: notes.trim() };
+      if (editingCase) await updateCase(editingCase.id, payload);
+      else await addCase(payload);
       await loadCases();
       setModalVisible(false);
       setEditingCase(null);
     } catch (e) {
       console.error('Save failed', e);
-      Alert.alert('Could not save', 'Something went wrong. Please try again.');
+      Alert.alert('Could not save', 'Something went wrong.');
     } finally {
       setSaving(false);
     }
@@ -461,63 +151,35 @@ export default function App() {
 
   function handleDelete() {
     if (!editingCase) return;
-    Alert.alert(
-      'Delete case?',
-      `"${editingCase.title}" will be removed permanently.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteCase(editingCase.id);
-              await loadCases();
-              setModalVisible(false);
-              setEditingCase(null);
-            } catch (e) {
-              console.error('Delete failed', e);
-              Alert.alert('Could not delete', 'Something went wrong.');
-            }
-          },
+    Alert.alert('Delete case?', `"${editingCase.title}" will be removed permanently.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteCase(editingCase.id);
+            await loadCases();
+            setModalVisible(false);
+            setEditingCase(null);
+          } catch (e) { Alert.alert('Could not delete', 'Something went wrong.'); }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   const isIOS = Platform.OS === 'ios';
 
-  if (currentScreen === 'legal') {
-    return <LegalScreen onBack={() => setCurrentScreen('cases')} />;
-  }
-
-  if (currentScreen === 'calculator') {
-    return <CalculatorScreen onBack={() => setCurrentScreen('cases')} />;
-  }
-
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>CaseDiary</Text>
-            <Text style={styles.subtitle}>Rampur District Court</Text>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={styles.title} numberOfLines={1}>CaseDiary</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>Rampur District Court</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.addButton, { marginRight: 8, paddingHorizontal: 10 }]}
-            onPress={() => setCurrentScreen('calculator')}
-          >
-            <Text style={styles.addButtonText}>Calc</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addButton, { marginRight: 8, paddingHorizontal: 10 }]}
-            onPress={() => setCurrentScreen('legal')}
-          >
-            <Text style={styles.addButtonText}>Laws</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.addButton, { paddingHorizontal: 10 }]} onPress={openAddModal}>
-            <Text style={styles.addButtonText}>+ Add</Text>
+          <TouchableOpacity style={styles.headerButtonPrimary} onPress={openAddModal}>
+            <Text style={styles.headerButtonPrimaryText}>+ Add Case</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -525,12 +187,11 @@ export default function App() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#1f3a5f" />
-          <Text style={styles.loadingText}>Loading cases…</Text>
         </View>
       ) : cases.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyTitle}>No cases yet</Text>
-          <Text style={styles.emptyText}>Tap "+ Add" to add your first case.</Text>
+          <Text style={styles.emptyText}>Tap "+ Add Case" to get started.</Text>
         </View>
       ) : (
         <FlatList
@@ -539,10 +200,11 @@ export default function App() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const days = daysUntil(item.nextHearing);
-            const isUrgent = days <= 1;
+            const isUrgent = days >= 0 && days <= 1; // Don't make past dates "urgent"
+            const isPast = days < 0;
             return (
               <TouchableOpacity activeOpacity={0.7} onPress={() => openEditModal(item)}>
-                <View style={[styles.card, isUrgent && styles.cardUrgent]}>
+                <View style={[styles.card, isUrgent && styles.cardUrgent, isPast && styles.cardPast]}>
                   <View style={styles.cardHeader}>
                     <Text style={styles.caseTitle}>{item.title}</Text>
                     {isUrgent && <Text style={styles.urgentBadge}>URGENT</Text>}
@@ -553,12 +215,10 @@ export default function App() {
                     <Text style={styles.dateLabel}>Next hearing:</Text>
                     <Text style={styles.dateValue}>{formatDate(item.nextHearing)}</Text>
                   </View>
-                  <Text style={styles.daysUntil}>
-                    {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`}
+                  <Text style={[styles.daysUntil, isPast && { color: '#888' }]}>
+                    {formatDaysText(days)}
                   </Text>
-                  {item.notes ? (
-                    <Text style={styles.notesIndicator}>📝 Has notes</Text>
-                  ) : null}
+                  {item.notes ? <Text style={styles.notesIndicator}>📝 Has notes</Text> : null}
                 </View>
               </TouchableOpacity>
             );
@@ -566,106 +226,51 @@ export default function App() {
         />
       )}
 
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closeModal}
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1, backgroundColor: '#fff' }}
-          behavior={isIOS ? 'padding' : undefined}
-        >
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
+        {/* Fix: Make StatusBar dark when modal is open to match white header */}
+        <StatusBar barStyle="dark-content" />
+        <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#fff' }} behavior={isIOS ? 'padding' : undefined}>
           <View style={styles.modalHeader}>
-            <Pressable onPress={closeModal} hitSlop={10}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </Pressable>
-            <Text style={styles.modalTitle}>
-              {editingCase ? 'Edit Case' : 'Add Case'}
-            </Text>
-            <Pressable onPress={handleSave} hitSlop={10} disabled={saving}>
-              <Text style={[styles.modalSave, saving && { opacity: 0.5 }]}>
-                {saving ? 'Saving…' : 'Save'}
-              </Text>
+            <Pressable onPress={closeModal}><Text style={styles.modalCancel}>Cancel</Text></Pressable>
+            <Text style={styles.modalTitle}>{editingCase ? 'Edit Case' : 'Add Case'}</Text>
+            <Pressable onPress={handleSave} disabled={saving}>
+              <Text style={[styles.modalSave, saving && { opacity: 0.5 }]}>{saving ? 'Saving…' : 'Save'}</Text>
             </Pressable>
           </View>
-
-          <ScrollView contentContainerStyle={styles.formContainer}>
+          <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Case title</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="e.g. State vs. Ramesh Kumar"
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="State vs. Ramesh Kumar" />
             <Text style={styles.label}>Case number</Text>
-            <TextInput
-              style={styles.input}
-              value={caseNumber}
-              onChangeText={setCaseNumber}
-              placeholder="e.g. CRL/245/2025"
-              placeholderTextColor="#aaa"
-              autoCapitalize="characters"
-            />
-
+            <TextInput style={styles.input} value={caseNumber} onChangeText={setCaseNumber} placeholder="CRL/245/2025" autoCapitalize="characters" />
             <Text style={styles.label}>Court</Text>
-            <TextInput
-              style={styles.input}
-              value={court}
-              onChangeText={setCourt}
-              placeholder="District Court Rampur"
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={styles.input} value={court} onChangeText={setCourt} placeholder="District Court Rampur" />
+            
             <Text style={styles.label}>Next hearing date</Text>
-            <TouchableOpacity
-              style={styles.input}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={{ fontSize: 16, color: '#1a1a1a' }}>
-                {formatDate(toISODate(hearingDate))}
-              </Text>
-            </TouchableOpacity>
-
-            {showDatePicker && (
-              <DateTimePicker
-                value={hearingDate}
-                mode="date"
-                display={isIOS ? 'inline' : 'default'}
-                onChange={(_, selected) => {
-                  if (isIOS) {
-                    if (selected) setHearingDate(selected);
-                  } else {
-                    setShowDatePicker(false);
-                    if (selected) setHearingDate(selected);
-                  }
-                }}
-              />
-            )}
-
-            {isIOS && showDatePicker && (
-              <TouchableOpacity
-                style={styles.doneButton}
-                onPress={() => setShowDatePicker(false)}
-              >
-                <Text style={styles.doneButtonText}>Done picking date</Text>
+            {/* Fix: Use compact display for iOS to save space */}
+            {isIOS ? (
+              <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
+                <DateTimePicker
+                  value={hearingDate}
+                  mode="date"
+                  display="compact"
+                  onChange={(_, selected) => { if (selected) setHearingDate(selected); }}
+                />
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+                <Text style={{ fontSize: 16, color: '#1a1a1a' }}>{formatDate(toISODate(hearingDate))}</Text>
               </TouchableOpacity>
+            )}
+            {!isIOS && showDatePicker && (
+              <DateTimePicker value={hearingDate} mode="date" display="default"
+                onChange={(_, selected) => {
+                  setShowDatePicker(false);
+                  if (selected) setHearingDate(selected);
+                }} />
             )}
 
             <Text style={styles.label}>Notes</Text>
-            <TextInput
-              style={[styles.input, styles.notesInput]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="e.g. Client to bring documents, witness attendance"
-              placeholderTextColor="#aaa"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-
+            <TextInput style={[styles.input, styles.notesInput]} value={notes} onChangeText={setNotes} placeholder="Client to bring documents..." multiline textAlignVertical="top" />
             {editingCase && (
               <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
                 <Text style={styles.deleteButtonText}>Delete this case</Text>
@@ -674,214 +279,302 @@ export default function App() {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ==========================================
+// SCREEN 2: LIMITATION CALCULATOR
+// ==========================================
+function CalculatorScreen() {
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  const [judgmentDate, setJudgmentDate] = useState<Date>(new Date());
+  const [selectedType, setSelectedType] = useState(LIMITATION_TYPES[0]);
+  const [deadline, setDeadline] = useState<Date | null>(null);
+
+  const isIOS = Platform.OS === 'ios';
+
+  function handleCalculate() {
+    setDeadline(calculateDeadline(judgmentDate, selectedType.days));
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+  }
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <Text style={styles.title}>Limitation Calculator</Text>
+      </View>
+      <ScrollView contentContainerStyle={styles.list} ref={scrollViewRef} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          <Text style={styles.label}>Judgment / Order Date</Text>
+          {isIOS ? (
+            <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
+              <DateTimePicker
+                value={judgmentDate}
+                mode="date"
+                display="compact"
+                onChange={(_, selected) => { if (selected) setJudgmentDate(selected); }}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+              <Text style={{ fontSize: 16, color: '#1a1a1a' }}>{formatDisplayDate(judgmentDate)}</Text>
+            </TouchableOpacity>
+          )}
+
+          <Text style={[styles.label, { marginTop: 24 }]}>Type of Proceeding</Text>
+          <View style={styles.typeGrid}>
+            {LIMITATION_TYPES.map((type) => (
+              <TouchableOpacity key={type.label}
+                style={[styles.typeButton, selectedType.label === type.label && styles.typeButtonActive]}
+                onPress={() => { setSelectedType(type); setDeadline(null); }}>
+                <Text style={[styles.typeButtonText, selectedType.label === type.label && styles.typeButtonTextActive]}>
+                  {type.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity style={styles.calcButton} onPress={handleCalculate}>
+            <Text style={styles.calcButtonText}>Calculate Deadline</Text>
+          </TouchableOpacity>
+
+          {deadline && (
+            <View style={styles.resultBox}>
+              <Text style={styles.resultLabel}>Last Date to File</Text>
+              <Text style={styles.resultDate}>{formatDisplayDate(deadline)}</Text>
+              <Text style={styles.resultHint}>Based on {selectedType.days} days from judgment.</Text>
+            </View>
+          )}
+          <Text style={styles.disclaimer}>
+            * Calculation based on standard calendar days. It does not automatically exclude court holidays. Always verify with latest court rules.
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+// ==========================================
+// SCREEN 3: LEGAL REFERENCE
+// ==========================================
+function LegalScreen() {
+  const insets = useSafeAreaInsets();
+  const [laws, setLaws] = useState<Law[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [selectedLaw, setSelectedLaw] = useState<Law | null>(null);
+  const [provisions, setProvisions] = useState<Provision[]>([]);
+  const [loadingProvisions, setLoadingProvisions] = useState(false);
+  const [selectedProvision, setSelectedProvision] = useState<Provision | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { loadAllLaws(); }, []);
+
+  async function loadAllLaws() {
+    try {
+      setLoading(true); setError(null);
+      const data = await fetchLaws();
+      setLaws(data);
+    } catch (e) {
+      setError('Could not load laws. Check internet.');
+    } finally { setLoading(false); }
+  }
+
+  const filteredLaws = laws.filter((law) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return law.title.toLowerCase().includes(q) || law.category.toLowerCase().includes(q);
+  });
+
+  async function openLaw(law: Law) {
+    setSelectedLaw(law); setLoadingProvisions(true); setError(null);
+    try {
+      const data = await fetchLawProvisions(law.apiSlug);
+      setProvisions(data);
+    } catch (e) { setError('Could not load provisions.'); }
+    finally { setLoadingProvisions(false); }
+  }
+
+  if (selectedProvision) {
+    const sectionPrefix = selectedProvision.number ? `Section ${selectedProvision.number}: ` : '';
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+          <TouchableOpacity onPress={() => setSelectedProvision(null)} style={{ paddingBottom: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 16 }}>← Close Section</Text>
+          </TouchableOpacity>
+          <Text style={styles.title} numberOfLines={2}>
+            {sectionPrefix}{selectedProvision.title}
+          </Text>
+        </View>
+        <ScrollView contentContainerStyle={styles.list}>
+          <View style={styles.card}>
+            <Text style={{ fontSize: 16, color: '#333', lineHeight: 24 }}>{selectedProvision.text}</Text>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (selectedLaw) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+          <TouchableOpacity onPress={() => { setSelectedLaw(null); setProvisions([]); }} style={{ paddingBottom: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 16 }}>← Back to Laws</Text>
+          </TouchableOpacity>
+          <Text style={styles.title} numberOfLines={2}>{selectedLaw.title}</Text>
+        </View>
+        {loadingProvisions ? (
+          <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#1f3a5f" /></View>
+        ) : (
+          <FlatList
+            data={provisions}
+            keyExtractor={(item, index) => item.number || String(index)}
+            contentContainerStyle={styles.list}
+            renderItem={({ item }) => {
+               const sectionNum = item.number ? `Section ${item.number}: ` : '';
+               return (
+                <TouchableOpacity onPress={() => setSelectedProvision(item)}>
+                  <View style={styles.card}>
+                    <Text style={styles.caseTitle}>{sectionNum}{item.title}</Text>
+                    <Text style={styles.caseNumber}>Tap to read full text</Text>
+                  </View>
+                </TouchableOpacity>
+               );
+            }}
+          />
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <Text style={styles.title}>Legal Reference</Text>
+        <View style={styles.searchContainer}>
+          <TextInput style={styles.searchInput} placeholder="Search laws (e.g. data)..." value={query} onChangeText={setQuery} />
+        </View>
+      </View>
+      {loading ? (
+        <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#1f3a5f" /></View>
+      ) : error ? (
+        <View style={styles.emptyContainer}><Text style={styles.emptyTitle}>{error}</Text></View>
+      ) : (
+        <FlatList
+          data={filteredLaws}
+          keyExtractor={(item, index) => item.apiSlug || String(index)}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={<View style={styles.emptyContainer}><Text style={styles.emptyTitle}>No laws found</Text></View>}
+          renderItem={({ item }) => (
+            <TouchableOpacity onPress={() => openLaw(item)}>
+              <View style={styles.card}>
+                <Text style={styles.caseTitle}>{item.title}</Text>
+                <Text style={styles.court}>{item.category} • {item.year || 'Active'}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+// ==========================================
+// MAIN APP (TAB NAVIGATOR)
+// ==========================================
+const Tab = createBottomTabNavigator();
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            headerShown: false,
+            tabBarActiveTintColor: '#1f3a5f',
+            tabBarInactiveTintColor: '#888',
+            tabBarStyle: { paddingBottom: 5, height: 60 },
+            tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName: any;
+              if (route.name === 'Cases') iconName = focused ? 'folder' : 'folder-outline';
+              else if (route.name === 'Calculator') iconName = focused ? 'calculator' : 'calculator-outline';
+              else if (route.name === 'Laws') iconName = focused ? 'book' : 'book-outline';
+              return <Ionicons name={iconName} size={size} color={color} />;
+            },
+          })}
+        >
+          <Tab.Screen name="Cases" component={CasesScreen} />
+          <Tab.Screen name="Calculator" component={CalculatorScreen} />
+          <Tab.Screen name="Laws" component={LegalScreen} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}
+
+// ==========================================
+// STYLES
+// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f6f8' },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
-    backgroundColor: '#1f3a5f',
-  },
+  header: { paddingHorizontal: 20, paddingBottom: 16, backgroundColor: '#1f3a5f' },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 28, fontWeight: '700', color: '#ffffff' },
+  title: { fontSize: 26, fontWeight: '700', color: '#ffffff' },
   subtitle: { fontSize: 14, color: '#c9d6e6', marginTop: 2 },
-  addButton: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  addButtonText: { color: '#1f3a5f', fontWeight: '700', fontSize: 13 },
-  searchContainer: {
-    marginTop: 12,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-  },
-  searchInput: {
-    height: 40,
-    fontSize: 15,
-    color: '#1a1a1a',
-  },
+  headerButtonPrimary: { backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  headerButtonPrimaryText: { color: '#1f3a5f', fontWeight: '700', fontSize: 13 },
+  searchContainer: { marginTop: 12, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12 },
+  searchInput: { height: 40, fontSize: 15, color: '#1a1a1a' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#555', fontSize: 14 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#1a1a1a', marginBottom: 6 },
   emptyText: { fontSize: 14, color: '#666', textAlign: 'center' },
   list: { padding: 16 },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+  card: { backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   cardUrgent: { borderLeftWidth: 5, borderLeftColor: '#d9534f' },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  caseTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    flex: 1,
-    paddingRight: 8,
-  },
-  urgentBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ffffff',
-    backgroundColor: '#d9534f',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
+  cardPast: { opacity: 0.6 }, // Fade out past cases
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
+  caseTitle: { fontSize: 17, fontWeight: '600', color: '#1a1a1a', flex: 1, paddingRight: 8 },
+  urgentBadge: { fontSize: 11, fontWeight: '700', color: '#ffffff', backgroundColor: '#d9534f', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   caseNumber: { fontSize: 13, color: '#555', marginBottom: 2 },
   court: { fontSize: 13, color: '#777', marginBottom: 10 },
-  dateRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
+  dateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   dateLabel: { fontSize: 14, color: '#444' },
   dateValue: { fontSize: 14, fontWeight: '600', color: '#1f3a5f' },
   daysUntil: { fontSize: 12, color: '#d9534f', fontWeight: '600' },
-  notesIndicator: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 6,
-    fontStyle: 'italic',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-    backgroundColor: '#fff',
-  },
+  notesIndicator: { fontSize: 12, color: '#666', marginTop: 6, fontStyle: 'italic' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ddd', backgroundColor: '#fff' },
   modalTitle: { fontSize: 17, fontWeight: '600', color: '#1a1a1a' },
   modalCancel: { fontSize: 16, color: '#888' },
   modalSave: { fontSize: 16, color: '#1f3a5f', fontWeight: '700' },
   formContainer: { padding: 20, paddingBottom: 40 },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#444',
-    marginTop: 16,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d0d7de',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1a1a1a',
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-  },
-  notesInput: {
-    minHeight: 100,
-    paddingTop: 12,
-  },
-  doneButton: {
-    marginTop: 12,
-    backgroundColor: '#1f3a5f',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
+  label: { fontSize: 13, fontWeight: '600', color: '#444', marginTop: 16, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { borderWidth: 1, borderColor: '#d0d7de', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: '#1a1a1a', backgroundColor: '#fff', justifyContent: 'center' },
+  notesInput: { minHeight: 100, paddingTop: 12 },
+  doneButton: { marginTop: 12, backgroundColor: '#1f3a5f', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   doneButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  deleteButton: {
-    marginTop: 32,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#d9534f',
-    backgroundColor: '#fff',
-  },
+  deleteButton: { marginTop: 32, paddingVertical: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#d9534f', backgroundColor: '#fff' },
   deleteButtonText: { color: '#d9534f', fontWeight: '600', fontSize: 15 },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  typeButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    backgroundColor: '#fff',
-  },
-  typeButtonActive: {
-    backgroundColor: '#1f3a5f',
-    borderColor: '#1f3a5f',
-  },
-  typeButtonText: {
-    fontSize: 14,
-    color: '#444',
-  },
-  typeButtonTextActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  calcButton: {
-    marginTop: 24,
-    backgroundColor: '#1f3a5f',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  calcButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  resultBox: {
-    marginTop: 24,
-    padding: 20,
-    backgroundColor: '#e8f0fe',
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#c2d7f5',
-  },
-  resultLabel: {
-    fontSize: 14,
-    color: '#444',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  resultDate: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1f3a5f',
-    marginBottom: 8,
-  },
-  resultHint: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  }
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  typeButton: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#ccc', backgroundColor: '#fff' },
+  typeButtonActive: { backgroundColor: '#1f3a5f', borderColor: '#1f3a5f' },
+  typeButtonText: { fontSize: 14, color: '#444' },
+  typeButtonTextActive: { color: '#fff', fontWeight: '600' },
+  calcButton: { marginTop: 24, backgroundColor: '#1f3a5f', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  calcButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  resultBox: { marginTop: 24, padding: 20, backgroundColor: '#e8f0fe', borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#c2d7f5' },
+  resultLabel: { fontSize: 14, color: '#444', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  resultDate: { fontSize: 24, fontWeight: '800', color: '#1f3a5f', marginBottom: 8 },
+  resultHint: { fontSize: 12, color: '#666', fontStyle: 'italic' },
+  disclaimer: { fontSize: 11, color: '#888', marginTop: 24, textAlign: 'center', lineHeight: 16 },
 });

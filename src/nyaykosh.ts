@@ -28,45 +28,55 @@ export async function fetchLaws(query?: string): Promise<Law[]> {
     url += `?q=${encodeURIComponent(query)}`;
   }
 
+  // Create an AbortController to enforce an 8-second timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
     if (!res.ok) throw new Error(`Failed to fetch laws: ${res.status}`);
     const data = await res.json();
     const laws = Array.isArray(data) ? data : data.data || [];
     
-    // Save to cache on success
     await AsyncStorage.setItem(LAWS_CACHE_KEY, JSON.stringify(laws));
     return laws;
   } catch (error) {
-    console.warn('API failed, trying cache...', error);
-    // If API fails, try to load from cache
+    clearTimeout(timeoutId);
+    console.warn('API failed or timed out, trying cache...', error);
+    
     const cached = await AsyncStorage.getItem(LAWS_CACHE_KEY);
     if (cached) {
       return JSON.parse(cached);
     }
-    throw error; // Re-throw if no cache is available
+    throw new Error('No internet and no cached laws available.');
   }
 }
 
 export async function fetchLawProvisions(slug: string): Promise<Provision[]> {
   const cacheKey = `${PROVISIONS_CACHE_PREFIX}${slug}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const res = await fetch(`${BASE_URL}/laws/${slug}/provisions`);
+    const res = await fetch(`${BASE_URL}/laws/${slug}/provisions`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
     if (!res.ok) throw new Error(`Failed to fetch provisions: ${res.status}`);
     const data = await res.json();
     const provisions = Array.isArray(data) ? data : data.data || [];
     
-    // Save to cache on success
     await AsyncStorage.setItem(cacheKey, JSON.stringify(provisions));
     return provisions;
   } catch (error) {
-    console.warn(`API failed for ${slug}, trying cache...`, error);
-    // If API fails, try to load from cache
+    clearTimeout(timeoutId);
+    console.warn(`API failed or timed out for ${slug}, trying cache...`, error);
+    
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
       return JSON.parse(cached);
     }
-    throw error; // Re-throw if no cache is available
+    throw new Error('No internet and no cached sections available.');
   }
 }
