@@ -19,6 +19,7 @@ Built for **Rampur District Court** as the first target market.
 | Delete case with confirmation | ✅ |
 | Local persistence (SQLite, no internet needed) | ✅ |
 | Per-case notes | ✅ |
+| Legal reference (Nyaykosh API, offline cached) | ✅ |
 | Day-before + morning-of reminders | ✅ |
 | Publish to stores | ⏳ pending validation |
 
@@ -76,6 +77,8 @@ v0.2.2	v0.2.2	SQLite persistence, list from DB, add case modal
 v0.3.0	v0.3.0	Edit and delete cases
 v0.4.0	v0.4.0	Local notifications (day-before + morning-of)
 v0.4.1	v0.4.1	Per-case notes
+| `v0.5.0` | `v0.5.0` | Nyaykosh API legal reference with offline caching |
+
 Commit messages follow Conventional Commits.
 
 Known limitations (development)
