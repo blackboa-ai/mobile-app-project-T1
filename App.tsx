@@ -32,6 +32,7 @@ import {
   type Law,
   type Provision,
 } from './src/nyaykosh';
+import { LIMITATION_TYPES, calculateDeadline, formatDisplayDate } from './src/limitation';
 
 // --- Helpers ---
 function formatDate(iso: string): string {
@@ -62,19 +63,125 @@ function fromISODate(iso: string): Date {
   return new Date(iso + 'T00:00:00');
 }
 
+// --- Calculator Screen Component ---
+function CalculatorScreen({ onBack }: { onBack: () => void }) {
+  const [judgmentDate, setJudgmentDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedType, setSelectedType] = useState(LIMITATION_TYPES[0]);
+  const [deadline, setDeadline] = useState<Date | null>(null);
+
+  const isIOS = Platform.OS === 'ios';
+
+  function handleCalculate() {
+    const result = calculateDeadline(judgmentDate, selectedType.days);
+    setDeadline(result);
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={onBack} style={{ padding: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={[styles.title, { fontSize: 20, marginLeft: 8 }]}>
+            Limitation Calculator
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.list}>
+        <View style={styles.card}>
+          <Text style={styles.label}>Judgment / Order Date</Text>
+          <TouchableOpacity
+            style={styles.input}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={{ fontSize: 16, color: '#1a1a1a' }}>
+              {formatDisplayDate(judgmentDate)}
+            </Text>
+          </TouchableOpacity>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={judgmentDate}
+              mode="date"
+              display={isIOS ? 'inline' : 'default'}
+              onChange={(_, selected) => {
+                if (isIOS) {
+                  if (selected) setJudgmentDate(selected);
+                } else {
+                  setShowDatePicker(false);
+                  if (selected) setJudgmentDate(selected);
+                }
+              }}
+            />
+          )}
+
+          {isIOS && showDatePicker && (
+            <TouchableOpacity
+              style={styles.doneButton}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={styles.doneButtonText}>Done picking date</Text>
+            </TouchableOpacity>
+          )}
+
+          <Text style={[styles.label, { marginTop: 24 }]}>Type of Proceeding</Text>
+          <View style={styles.typeGrid}>
+            {LIMITATION_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type.label}
+                style={[
+                  styles.typeButton,
+                  selectedType.label === type.label && styles.typeButtonActive,
+                ]}
+                onPress={() => {
+                  setSelectedType(type);
+                  setDeadline(null); // Reset result when type changes
+                }}
+              >
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    selectedType.label === type.label && styles.typeButtonTextActive,
+                  ]}
+                >
+                  {type.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity style={styles.calcButton} onPress={handleCalculate}>
+            <Text style={styles.calcButtonText}>Calculate Deadline</Text>
+          </TouchableOpacity>
+
+          {deadline && (
+            <View style={styles.resultBox}>
+              <Text style={styles.resultLabel}>Last Date to File</Text>
+              <Text style={styles.resultDate}>{formatDisplayDate(deadline)}</Text>
+              <Text style={styles.resultHint}>
+                Based on {selectedType.days} days from judgment.
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 // --- Legal Reference Screen Component ---
 function LegalScreen({ onBack }: { onBack: () => void }) {
   const [laws, setLaws] = useState<Law[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  
   const [selectedLaw, setSelectedLaw] = useState<Law | null>(null);
   const [provisions, setProvisions] = useState<Provision[]>([]);
   const [loadingProvisions, setLoadingProvisions] = useState(false);
-  
-  // New state for viewing a specific section
   const [selectedProvision, setSelectedProvision] = useState<Provision | null>(null);
-  
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -126,7 +233,6 @@ function LegalScreen({ onBack }: { onBack: () => void }) {
     setSelectedProvision(null);
   }
 
-  // View 3: A specific Section's full text (rendered as a modal)
   if (selectedProvision) {
     return (
       <SafeAreaView style={styles.container}>
@@ -155,7 +261,6 @@ function LegalScreen({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // View 2: List of sections for the selected law
   if (selectedLaw) {
     return (
       <SafeAreaView style={styles.container}>
@@ -200,7 +305,6 @@ function LegalScreen({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // View 1: List of all Laws
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -263,7 +367,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
-  const [currentScreen, setCurrentScreen] = useState<'cases' | 'legal'>('cases');
+  const [currentScreen, setCurrentScreen] = useState<'cases' | 'legal' | 'calculator'>('cases');
 
   // Case Form State
   const [title, setTitle] = useState('');
@@ -387,6 +491,10 @@ export default function App() {
     return <LegalScreen onBack={() => setCurrentScreen('cases')} />;
   }
 
+  if (currentScreen === 'calculator') {
+    return <CalculatorScreen onBack={() => setCurrentScreen('cases')} />;
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -397,12 +505,18 @@ export default function App() {
             <Text style={styles.subtitle}>Rampur District Court</Text>
           </View>
           <TouchableOpacity
-            style={[styles.addButton, { marginRight: 8 }]}
+            style={[styles.addButton, { marginRight: 8, paddingHorizontal: 10 }]}
+            onPress={() => setCurrentScreen('calculator')}
+          >
+            <Text style={styles.addButtonText}>Calc</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addButton, { marginRight: 8, paddingHorizontal: 10 }]}
             onPress={() => setCurrentScreen('legal')}
           >
             <Text style={styles.addButtonText}>Laws</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+          <TouchableOpacity style={[styles.addButton, { paddingHorizontal: 10 }]} onPress={openAddModal}>
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
         </View>
@@ -577,11 +691,10 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#c9d6e6', marginTop: 2 },
   addButton: {
     backgroundColor: '#ffffff',
-    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
   },
-  addButtonText: { color: '#1f3a5f', fontWeight: '700', fontSize: 14 },
+  addButtonText: { color: '#1f3a5f', fontWeight: '700', fontSize: 13 },
   searchContainer: {
     marginTop: 12,
     backgroundColor: '#fff',
@@ -706,4 +819,69 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   deleteButtonText: { color: '#d9534f', fontWeight: '600', fontSize: 15 },
+  typeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  typeButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    backgroundColor: '#fff',
+  },
+  typeButtonActive: {
+    backgroundColor: '#1f3a5f',
+    borderColor: '#1f3a5f',
+  },
+  typeButtonText: {
+    fontSize: 14,
+    color: '#444',
+  },
+  typeButtonTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  calcButton: {
+    marginTop: 24,
+    backgroundColor: '#1f3a5f',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  calcButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  resultBox: {
+    marginTop: 24,
+    padding: 20,
+    backgroundColor: '#e8f0fe',
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#c2d7f5',
+  },
+  resultLabel: {
+    fontSize: 14,
+    color: '#444',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  resultDate: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1f3a5f',
+    marginBottom: 8,
+  },
+  resultHint: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+  }
 });
