@@ -25,6 +25,7 @@ import {
   deleteCase,
   type Case,
 } from './src/storage/cases';
+import { rescheduleAll } from './src/notifications';
 
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
@@ -72,6 +73,7 @@ export default function App() {
     const rows = await getAllCases();
     console.log(`Loaded ${rows.length} cases from SQLite`);
     setCases(rows);
+    await rescheduleAll(rows);
   }
 
   useEffect(() => {
