@@ -66,6 +66,7 @@ export default function App() {
   const [caseNumber, setCaseNumber] = useState('');
   const [court, setCourt] = useState('District Court Rampur');
   const [hearingDate, setHearingDate] = useState<Date>(new Date());
+  const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -95,6 +96,7 @@ export default function App() {
     setCaseNumber('');
     setCourt('District Court Rampur');
     setHearingDate(new Date());
+    setNotes('');
     setShowDatePicker(false);
     setModalVisible(true);
   }
@@ -105,6 +107,7 @@ export default function App() {
     setCaseNumber(c.caseNumber);
     setCourt(c.court);
     setHearingDate(fromISODate(c.nextHearing));
+    setNotes(c.notes ?? '');
     setShowDatePicker(false);
     setModalVisible(true);
   }
@@ -130,6 +133,7 @@ export default function App() {
         caseNumber: caseNumber.trim(),
         court: court.trim() || 'District Court Rampur',
         nextHearing: toISODate(hearingDate),
+        notes: notes.trim(),
       };
       if (editingCase) {
         await updateCase(editingCase.id, payload);
@@ -227,6 +231,9 @@ export default function App() {
                   <Text style={styles.daysUntil}>
                     {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`}
                   </Text>
+                  {item.notes ? (
+                    <Text style={styles.notesIndicator}>📝 Has notes</Text>
+                  ) : null}
                 </View>
               </TouchableOpacity>
             );
@@ -322,6 +329,18 @@ export default function App() {
               </TouchableOpacity>
             )}
 
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              style={[styles.input, styles.notesInput]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="e.g. Client to bring documents, witness attendance"
+              placeholderTextColor="#aaa"
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+
             {editingCase && (
               <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
                 <Text style={styles.deleteButtonText}>Delete this case</Text>
@@ -403,6 +422,12 @@ const styles = StyleSheet.create({
   dateLabel: { fontSize: 14, color: '#444' },
   dateValue: { fontSize: 14, fontWeight: '600', color: '#1f3a5f' },
   daysUntil: { fontSize: 12, color: '#d9534f', fontWeight: '600' },
+  notesIndicator: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -436,6 +461,10 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     backgroundColor: '#fff',
     justifyContent: 'center',
+  },
+  notesInput: {
+    minHeight: 100,
+    paddingTop: 12,
   },
   doneButton: {
     marginTop: 12,
