@@ -26,7 +26,14 @@ import {
   type Case,
 } from './src/storage/cases';
 import { rescheduleAll } from './src/notifications';
+import {
+  fetchLaws,
+  fetchLawProvisions,
+  type Law,
+  type Provision,
+} from './src/nyaykosh';
 
+// --- Helpers ---
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString('en-IN', {
@@ -55,13 +62,210 @@ function fromISODate(iso: string): Date {
   return new Date(iso + 'T00:00:00');
 }
 
+// --- Legal Reference Screen Component ---
+function LegalScreen({ onBack }: { onBack: () => void }) {
+  const [laws, setLaws] = useState<Law[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  
+  const [selectedLaw, setSelectedLaw] = useState<Law | null>(null);
+  const [provisions, setProvisions] = useState<Provision[]>([]);
+  const [loadingProvisions, setLoadingProvisions] = useState(false);
+  
+  // New state for viewing a specific section
+  const [selectedProvision, setSelectedProvision] = useState<Provision | null>(null);
+  
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadAllLaws();
+  }, []);
+
+  async function loadAllLaws() {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchLaws();
+      setLaws(data);
+    } catch (e) {
+      setError('Could not load laws. Check your internet connection.');
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredLaws = laws.filter((law) => {
+    if (!query.trim()) return true;
+    const searchTerm = query.toLowerCase();
+    return (
+      law.title.toLowerCase().includes(searchTerm) ||
+      law.category.toLowerCase().includes(searchTerm) ||
+      law.authority.toLowerCase().includes(searchTerm)
+    );
+  });
+
+  async function openLaw(law: Law) {
+    setSelectedLaw(law);
+    setLoadingProvisions(true);
+    setError(null);
+    try {
+      const data = await fetchLawProvisions(law.apiSlug);
+      setProvisions(data);
+    } catch (e) {
+      setError('Could not load provisions.');
+      console.error(e);
+    } finally {
+      setLoadingProvisions(false);
+    }
+  }
+
+  function goBackToList() {
+    setSelectedLaw(null);
+    setProvisions([]);
+    setSelectedProvision(null);
+  }
+
+  // View 3: A specific Section's full text (rendered as a modal)
+  if (selectedProvision) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={() => setSelectedProvision(null)} style={{ padding: 8 }}>
+              <Text style={{ color: '#fff', fontSize: 18 }}>← Close</Text>
+            </TouchableOpacity>
+            <Text style={[styles.title, { fontSize: 18, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+              Section {selectedProvision.number}
+            </Text>
+          </View>
+        </View>
+        <ScrollView contentContainerStyle={styles.list}>
+          <View style={styles.card}>
+            <Text style={[styles.caseTitle, { fontSize: 20, marginBottom: 12 }]}>
+              {selectedProvision.title}
+            </Text>
+            <Text style={{ fontSize: 16, color: '#333', lineHeight: 24 }}>
+              {selectedProvision.text}
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // View 2: List of sections for the selected law
+  if (selectedLaw) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={goBackToList} style={{ padding: 8 }}>
+              <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={[styles.title, { fontSize: 18, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+              {selectedLaw.title}
+            </Text>
+          </View>
+        </View>
+        {loadingProvisions ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#1f3a5f" />
+          </View>
+        ) : error ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>Error</Text>
+            <Text style={styles.emptyText}>{error}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={provisions}
+            keyExtractor={(item, index) => item.number || String(index)}
+            contentContainerStyle={styles.list}
+            renderItem={({ item }) => (
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setSelectedProvision(item)}>
+                <View style={styles.card}>
+                  <Text style={styles.caseTitle}>
+                    Section {item.number}: {item.title}
+                  </Text>
+                  <Text style={styles.caseNumber}>Tap to read full text</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // View 1: List of all Laws
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={onBack} style={{ padding: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={[styles.title, { fontSize: 20, marginLeft: 8 }]}>
+            Legal Reference
+          </Text>
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search laws (e.g. data, gaming)..."
+            placeholderTextColor="#aaa"
+            value={query}
+            onChangeText={setQuery}
+            returnKeyType="search"
+          />
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1f3a5f" />
+        </View>
+      ) : error ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Error</Text>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity style={[styles.addButton, { marginTop: 16 }]} onPress={loadAllLaws}>
+            <Text style={styles.addButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredLaws}
+          keyExtractor={(item, index) => item.apiSlug || String(index)}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <TouchableOpacity activeOpacity={0.7} onPress={() => openLaw(item)}>
+              <View style={styles.card}>
+                <Text style={styles.caseTitle}>{item.title}</Text>
+                <Text style={styles.court}>{item.category} • {item.authority}</Text>
+                <Text style={styles.caseNumber}>{item.sections} sections • {item.status}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+// --- Main App Component ---
 export default function App() {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<'cases' | 'legal'>('cases');
 
-  // Form state
+  // Case Form State
   const [title, setTitle] = useState('');
   const [caseNumber, setCaseNumber] = useState('');
   const [court, setCourt] = useState('District Court Rampur');
@@ -179,6 +383,10 @@ export default function App() {
 
   const isIOS = Platform.OS === 'ios';
 
+  if (currentScreen === 'legal') {
+    return <LegalScreen onBack={() => setCurrentScreen('cases')} />;
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -188,6 +396,12 @@ export default function App() {
             <Text style={styles.title}>CaseDiary</Text>
             <Text style={styles.subtitle}>Rampur District Court</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.addButton, { marginRight: 8 }]}
+            onPress={() => setCurrentScreen('legal')}
+          >
+            <Text style={styles.addButtonText}>Laws</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
@@ -213,10 +427,7 @@ export default function App() {
             const days = daysUntil(item.nextHearing);
             const isUrgent = days <= 1;
             return (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => openEditModal(item)}
-              >
+              <TouchableOpacity activeOpacity={0.7} onPress={() => openEditModal(item)}>
                 <View style={[styles.card, isUrgent && styles.cardUrgent]}>
                   <View style={styles.cardHeader}>
                     <Text style={styles.caseTitle}>{item.title}</Text>
@@ -371,6 +582,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   addButtonText: { color: '#1f3a5f', fontWeight: '700', fontSize: 14 },
+  searchContainer: {
+    marginTop: 12,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    height: 40,
+    fontSize: 15,
+    color: '#1a1a1a',
+  },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 12, color: '#555', fontSize: 14 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
