@@ -10,6 +10,7 @@ should be considered "fully verified" until the corresponding item is checked of
 - [x] **Phase 4:** Local notifications.
 - [x] **Phase 4.1:** Per-case notes.
 - [x] **Phase 5:** Nyaykosh Legal Reference API integration.
+- [x] **Phase 6:** Limitation Period Calculator.
 
 ## Deferred / Pending Verification
 

@@ -9,7 +9,7 @@ Built for **Rampur District Court** as the first target market.
 
 ## Status
 
-**Current version:** `v0.4.1` — working MVP, tested on iPhone via Expo Go.
+**Current version:** `v0.6.0` — working MVP with Legal Reference and Limitation Calculator, tested on iPhone via Expo Go.
 
 | Feature | Status |
 |---|---|
@@ -19,8 +19,9 @@ Built for **Rampur District Court** as the first target market.
 | Delete case with confirmation | ✅ |
 | Local persistence (SQLite, no internet needed) | ✅ |
 | Per-case notes | ✅ |
-| Legal reference (Nyaykosh API, offline cached) | ✅ |
 | Day-before + morning-of reminders | ✅ |
+| Nyaykosh Legal Reference (offline cached) | ✅ |
+| Limitation Period Calculator | ✅ |
 | Publish to stores | ⏳ pending validation |
 
 See [`TODO.md`](TODO.md) for deferred items and verification tasks.
@@ -33,7 +34,8 @@ See [`TODO.md`](TODO.md) for deferred items and verification tasks.
 - **TypeScript**
 - **expo-sqlite** — local database, works offline
 - **expo-notifications** — local scheduled reminders, no server
-- **@react-native-community/datetimepicker** — date field
+- **@react-native-community/datetimepicker** — date fields
+- **@react-native-async-storage/async-storage** — caching API responses
 - **Git + GitHub** — version control
 
 Zero backend. Zero API costs. Data stays on the phone.
@@ -46,10 +48,10 @@ Requires: Node.js (LTS), Git, VS Code, and an iPhone or Android device with
 **Expo Go** installed (free from the App Store / Play Store).
 
 ```bash
-
 git clone https://github.com/blackboa-ai/mobile-app-project-T1.git
 cd mobile-app-project-T1
 npx expo start
+
 Scan the QR code with Expo Go on your phone (same Wi-Fi network as your
 computer). The app loads immediately — no build step needed for development.
 
@@ -58,18 +60,21 @@ signed into the same Expo account (blackboa). If the app doesn't connect,
 run npx expo login on the computer.
 
 Project structure
-text
+
 mobile-app-project-T1/
-├── App.tsx                    # App entry: list, modal, form
+├── App.tsx                    # App entry: cases, modals, screens
 ├── src/
 │   ├── storage/
 │   │   └── cases.ts           # SQLite: schema, migrations, CRUD
-│   └── notifications.ts       # Local reminder scheduling
+│   ├── notifications.ts       # Local reminder scheduling
+│   ├── nyaykosh.ts            # Free govt API (laws & provisions) + cache
+│   └── limitation.ts          # Limitation period calculation logic
 ├── assets/                    # App icons, splash
 ├── app.json                   # Expo config
 ├── package.json
 ├── TODO.md                    # Deferred / pending verification
 └── README.md                  # this file
+
 Version history
 Version	Tag	Description
 v0.0.1	v0.0.1	Expo scaffold
@@ -77,8 +82,8 @@ v0.2.2	v0.2.2	SQLite persistence, list from DB, add case modal
 v0.3.0	v0.3.0	Edit and delete cases
 v0.4.0	v0.4.0	Local notifications (day-before + morning-of)
 v0.4.1	v0.4.1	Per-case notes
-| `v0.5.0` | `v0.5.0` | Nyaykosh API legal reference with offline caching |
-
+v0.5.0	v0.5.0	Nyaykosh legal reference with offline caching
+v0.6.0	v0.6.0	Limitation Period Calculator
 Commit messages follow Conventional Commits.
 
 Known limitations (development)
@@ -89,8 +94,10 @@ expo-notifications is not fully supported in Expo Go on iOS (SDK 53+).
 Scheduling works, but real delivery must be verified in a development
 build. See TODO.md.
 
+The Nyaykosh API currently only covers 4 Acts (DPDP, Aadhaar, IT Act, Gaming).
+
 The current data model is manual entry only. There is no eCourts
-auto-fetch, and this is intentional — see the trust-model note below.
+auto-fetch, and this is intentional.
 
 Design philosophy: trust over automation
 Indian lawyers distrust scraped court data because stale or wrong dates have
@@ -99,17 +106,13 @@ source of truth. When we eventually add eCourts fetching, every date will
 be labelled as either "You entered this" or "Fetched / unverified" so the
 lawyer always knows what they're looking at.
 
-The app is deliberately narrow: it does not do billing, AI drafting,
-document management, client portals, or team workflows. It does one thing —
-help the lawyer never miss a hearing.
-
 Roadmap
-Phase 5 — polish: safe-area fix, empty-state improvement, card design.
+Phase 7 — UI Polish (Bottom Navigation Tabs, empty states, safe-area fix).
 
-Phase 6 — development build (EAS) to verify real notifications, then
+Phase 8 — Development build (EAS) to verify real notifications, then
 Google Play internal testing track ($25 one-time).
 
-Later — trust-mode labels, daily digest, procedural deadline tracker.
+Later — eCourts cause list integration (trust mode labels), daily digest.
 
 License
 Not yet chosen. All rights reserved by the author.
