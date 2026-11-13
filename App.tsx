@@ -17,7 +17,14 @@ import {
   Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { initDatabase, getAllCases, addCase, type Case } from './src/storage/cases';
+import {
+  initDatabase,
+  getAllCases,
+  addCase,
+  updateCase,
+  deleteCase,
+  type Case,
+} from './src/storage/cases';
 
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
@@ -43,10 +50,15 @@ function toISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function fromISODate(iso: string): Date {
+  return new Date(iso + 'T00:00:00');
+}
+
 export default function App() {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingCase, setEditingCase] = useState<Case | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -75,7 +87,8 @@ export default function App() {
     })();
   }, []);
 
-  function openModal() {
+  function openAddModal() {
+    setEditingCase(null);
     setTitle('');
     setCaseNumber('');
     setCourt('District Court Rampur');
@@ -84,8 +97,19 @@ export default function App() {
     setModalVisible(true);
   }
 
+  function openEditModal(c: Case) {
+    setEditingCase(c);
+    setTitle(c.title);
+    setCaseNumber(c.caseNumber);
+    setCourt(c.court);
+    setHearingDate(fromISODate(c.nextHearing));
+    setShowDatePicker(false);
+    setModalVisible(true);
+  }
+
   function closeModal() {
     setModalVisible(false);
+    setEditingCase(null);
   }
 
   async function handleSave() {
@@ -99,20 +123,52 @@ export default function App() {
     }
     try {
       setSaving(true);
-      await addCase({
+      const payload = {
         title: title.trim(),
         caseNumber: caseNumber.trim(),
         court: court.trim() || 'District Court Rampur',
         nextHearing: toISODate(hearingDate),
-      });
+      };
+      if (editingCase) {
+        await updateCase(editingCase.id, payload);
+      } else {
+        await addCase(payload);
+      }
       await loadCases();
       setModalVisible(false);
+      setEditingCase(null);
     } catch (e) {
       console.error('Save failed', e);
       Alert.alert('Could not save', 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleDelete() {
+    if (!editingCase) return;
+    Alert.alert(
+      'Delete case?',
+      `"${editingCase.title}" will be removed permanently.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteCase(editingCase.id);
+              await loadCases();
+              setModalVisible(false);
+              setEditingCase(null);
+            } catch (e) {
+              console.error('Delete failed', e);
+              Alert.alert('Could not delete', 'Something went wrong.');
+            }
+          },
+        },
+      ]
+    );
   }
 
   const isIOS = Platform.OS === 'ios';
@@ -126,7 +182,7 @@ export default function App() {
             <Text style={styles.title}>CaseDiary</Text>
             <Text style={styles.subtitle}>Rampur District Court</Text>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={openModal}>
+          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
         </View>
@@ -151,21 +207,26 @@ export default function App() {
             const days = daysUntil(item.nextHearing);
             const isUrgent = days <= 1;
             return (
-              <View style={[styles.card, isUrgent && styles.cardUrgent]}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.caseTitle}>{item.title}</Text>
-                  {isUrgent && <Text style={styles.urgentBadge}>URGENT</Text>}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => openEditModal(item)}
+              >
+                <View style={[styles.card, isUrgent && styles.cardUrgent]}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.caseTitle}>{item.title}</Text>
+                    {isUrgent && <Text style={styles.urgentBadge}>URGENT</Text>}
+                  </View>
+                  <Text style={styles.caseNumber}>{item.caseNumber}</Text>
+                  <Text style={styles.court}>{item.court}</Text>
+                  <View style={styles.dateRow}>
+                    <Text style={styles.dateLabel}>Next hearing:</Text>
+                    <Text style={styles.dateValue}>{formatDate(item.nextHearing)}</Text>
+                  </View>
+                  <Text style={styles.daysUntil}>
+                    {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`}
+                  </Text>
                 </View>
-                <Text style={styles.caseNumber}>{item.caseNumber}</Text>
-                <Text style={styles.court}>{item.court}</Text>
-                <View style={styles.dateRow}>
-                  <Text style={styles.dateLabel}>Next hearing:</Text>
-                  <Text style={styles.dateValue}>{formatDate(item.nextHearing)}</Text>
-                </View>
-                <Text style={styles.daysUntil}>
-                  {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`}
-                </Text>
-              </View>
+              </TouchableOpacity>
             );
           }}
         />
@@ -185,7 +246,9 @@ export default function App() {
             <Pressable onPress={closeModal} hitSlop={10}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </Pressable>
-            <Text style={styles.modalTitle}>Add Case</Text>
+            <Text style={styles.modalTitle}>
+              {editingCase ? 'Edit Case' : 'Add Case'}
+            </Text>
             <Pressable onPress={handleSave} hitSlop={10} disabled={saving}>
               <Text style={[styles.modalSave, saving && { opacity: 0.5 }]}>
                 {saving ? 'Saving…' : 'Save'}
@@ -254,6 +317,12 @@ export default function App() {
                 onPress={() => setShowDatePicker(false)}
               >
                 <Text style={styles.doneButtonText}>Done picking date</Text>
+              </TouchableOpacity>
+            )}
+
+            {editingCase && (
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+                <Text style={styles.deleteButtonText}>Delete this case</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
@@ -374,4 +443,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   doneButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  deleteButton: {
+    marginTop: 32,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d9534f',
+    backgroundColor: '#fff',
+  },
+  deleteButtonText: { color: '#d9534f', fontWeight: '600', fontSize: 15 },
 });
